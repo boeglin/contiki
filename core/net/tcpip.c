@@ -567,11 +567,10 @@ tcpip_ipv6_output(void)
       if(locrt == NULL) {
         if((nexthop = uip_ds6_defrt_choose()) == NULL) {
 #ifdef UIP_FALLBACK_INTERFACE
+	  PRINTF("FALLBACK: removing ext hdrs %d\n", uip_ext_len);
 	  if(uip_ext_len > 0) {
 	    remove_all_ext_hdr();
 	  }
-	  PRINTF("FALLBACK: removing ext hdrs & setting proto %d %d\n", 
-		 uip_ext_len, *((uint8_t *)UIP_IP_BUF + 40));
 	  UIP_FALLBACK_INTERFACE.output();
 #else
           PRINTF("tcpip_ipv6_output: Destination off-link but no route\n");
