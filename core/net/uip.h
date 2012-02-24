@@ -1874,6 +1874,7 @@ struct uip_udp_hdr {
 #define UIP_EXT_HDR_BITMAP_DESTO2 0x40
 /** @} */
 
+/** @{ */
 /**
  * \brief Functions for extension header processing
  */
@@ -1890,6 +1891,8 @@ struct uip_ext_hdr* find_ext_hdr(uint8_t hdr_type, struct uip_ext_hdr**
 struct uip_ext_hdr_opt* find_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
     struct uip_ext_hdr** hdr_ptr, struct uip_ext_hdr_opt** prev_opt_ptr,
     struct uip_ext_hdr_opt** next_opt_ptr);
+/** @} */
+
 
 #endif /* UIP_CONF_IPV6 */
 
