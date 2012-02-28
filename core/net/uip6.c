@@ -712,7 +712,7 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
   {
     void* next_hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
     /* Fix header size. */
-    hdr_ptr->len = (aligned_hdr_len - 1) >> 3;
+    hdr_ptr->len = (aligned_hdr_len >> 3) - 1;
 
     /* Finally, pack the rest of the packet and fix IP size. */
     void* new_next_hdr_ptr = next_hdr_ptr - removed_len;
@@ -738,20 +738,243 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
   return removed_len;
 }
 /*---------------------------------------------------------------------------*/
-
+/**
+ * \brief Add an extension header of a specific type.
+ * \param hdr_type The type of extension header to add.
+ * \param hdr_len The size of the extension header to add, including its
+ * header.
+ * \return A pointer to the extension header, or NULL in case of error (header
+ * already present, or requested size too big for UIP_BUF).
+ */
 struct uip_ext_hdr*
 add_ext_hdr(uint8_t hdr_type, int hdr_len)
 {
-  return NULL; //XXX
-}
+  uint8_t header_type[4] = {UIP_PROTO_HBHO, UIP_PROTO_DESTO,
+    UIP_PROTO_ROUTING, UIP_PROTO_FRAG};
+  int i;
+  struct uip_ext_hdr* hdr_ptr = (void*)UIP_IP_BUF + UIP_IPH_LEN;
+  uint8_t* hdr_type_ptr = &UIP_IP_BUF->proto;
 
+  /* First, check if it's already here. */
+  if(find_ext_hdr(hdr_type, NULL))
+  {
+    PRINTF("ERROR: header already present\n");
+    return NULL;
+  }
+
+  /*
+   * Then, align to nearest multiple of 8 and check if there is enough space.
+   */
+  hdr_len = (hdr_len + 7) & ~7;
+  if(uip_len + hdr_len > UIP_BUFSIZE)
+  {
+    PRINTF("ERROR: header too big\n");
+    return NULL;
+  }
+
+  /* Else, find where to insert it. */
+  for(i = 0; i < sizeof(header_type); ++i)
+  {
+    if(header_type[i] == hdr_type)
+      /* Insert here. */
+      break;
+    if(header_type[i] == *hdr_type_ptr)
+    {
+      /* Advance pointer. */
+      hdr_type_ptr = &hdr_ptr->next;
+      hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
+    }
+  }
+  if(i == sizeof(header_type))
+  {
+    PRINTF("ERROR: could not insert header, unknown type %d?\n", hdr_type);
+    return NULL;
+  }
+
+  uint8_t next_hdr_type = *hdr_type_ptr;
+
+  memmove((void*)hdr_ptr + hdr_len, hdr_ptr, uip_len -
+      ((void*)hdr_ptr - (void*)UIP_IP_BUF));
+
+  /* Fix packet. */
+  hdr_ptr->next = next_hdr_type;
+  *hdr_type_ptr = hdr_type;
+  hdr_ptr->len = (hdr_len >> 3) - 1;
+
+  *((uint8_t*)hdr_ptr + 2) = UIP_EXT_HDR_OPT_PADN;
+  *((uint8_t*)hdr_ptr + 3) = hdr_len - 4;
+  memset((uint8_t*)hdr_ptr + 4, 0, hdr_len - 4);
+
+  uip_len += hdr_len;
+  uip_ext_len += hdr_len;
+
+  UIP_IP_BUF->len[0] = (uip_len - UIP_IPH_LEN) >> 8;
+  UIP_IP_BUF->len[1] = (uip_len - UIP_IPH_LEN) & 0xff;
+
+  return hdr_ptr;
+}
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Add an extension header option of a specific type.
+ * \param hdr_type The type of extension header to add.
+ * \param opt_type The type of extension header option to add.
+ * \param opt_len The size of the extension header option to add, including
+ * its header.
+ * \param opt_alignment The alignment of the extension header to add. Can be
+ * 1, 2, or 4.
+ * \return A pointer to the extension header option, or NULL in case of error
+ * (requested size too big for UIP_BUF).
+ */
 struct uip_ext_hdr_opt*
 add_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int opt_len, int
     opt_alignment)
 {
-  return NULL; //XXX
-}
+  struct uip_ext_hdr* hdr_ptr = find_ext_hdr(hdr_type, NULL);
+  struct uip_ext_hdr_opt* opt_ptr;
+  struct uip_ext_hdr_opt* last_opt_ptr;
 
+  if(hdr_ptr)
+  {
+    /*
+     * Find last option, check if necessary size is available, fix packet and
+     * return pointer.
+     * Note: we could save a few bytes here by inserting the option where it
+     * requires the least additional padding.
+     */
+
+    /* Find where options actually end. */
+    int hdr_len = (hdr_ptr-> len + 1) << 3;
+    int opt_offset = 2;
+    struct uip_ext_hdr_opt* tmp_ptr = (void*)hdr_ptr + 2;
+
+    last_opt_ptr = tmp_ptr;
+    while(opt_offset < hdr_len)
+    {
+      switch(tmp_ptr->type)
+      {
+        case UIP_EXT_HDR_OPT_PAD1:
+          ++opt_offset;
+          tmp_ptr = (void*)tmp_ptr + 1;
+          break;
+        default:
+          last_opt_ptr = (void*)tmp_ptr + tmp_ptr->len + 2;
+        case UIP_EXT_HDR_OPT_PADN:
+          opt_offset += tmp_ptr->len + 2;
+          tmp_ptr = (void*)tmp_ptr + tmp_ptr->len + 2;
+      }
+    }
+
+    int last_opt_offset = (void*)last_opt_ptr - (void*)hdr_ptr;
+    int aligned_opt_offset;
+    switch(opt_alignment)
+    {
+      case 4:
+        /* Align to the nearest 4n + 2. "+ 2" is for the option header. */
+        aligned_opt_offset = ((last_opt_offset + 1) & ~3) | 2;
+        break;
+      case 2:
+        /* Align to the nearest 2n. */
+        aligned_opt_offset = (last_opt_offset + 1) & ~1;
+        break;
+      default:
+        /*
+         * Maybe we should use an explicit "case 1" here and return an error
+         * in the default case.
+         */
+        aligned_opt_offset = last_opt_offset;
+    }
+    int new_hdr_len = (aligned_opt_offset + opt_len + 7) & ~7;
+    if(uip_len + new_hdr_len > UIP_BUFSIZE)
+    {
+      PRINTF("ERROR: option too big\n");
+      return NULL;
+    }
+
+    memmove((void*)hdr_ptr + new_hdr_len, (void*)hdr_ptr + hdr_len, uip_len -
+        ((void*)hdr_ptr - (void*)UIP_IP_BUF));
+
+    opt_ptr = (void*)hdr_ptr + aligned_opt_offset;
+    opt_ptr->type = opt_type;
+    opt_ptr->len = opt_len - 2;
+    memset((void*)opt_ptr + 2, 0, opt_len - 2);
+
+    /* Fix padding. */
+    switch(aligned_opt_offset - last_opt_offset)
+    {
+      case 0:
+        break;
+      case 1:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PAD1;
+        break;
+      default:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PADN;
+        last_opt_ptr->len = aligned_opt_offset - last_opt_offset - 2;
+        memset((void*)last_opt_ptr + 2, 0, aligned_opt_offset -
+            last_opt_offset - 2);
+    }
+    last_opt_ptr = (void*)opt_ptr + opt_len;
+    switch(new_hdr_len - (aligned_opt_offset + opt_len))
+    {
+      case 0:
+        break;
+      case 1:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PAD1;
+        break;
+      default:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PADN;
+        last_opt_ptr->len = new_hdr_len - (aligned_opt_offset + opt_len) - 2;
+        memset((void*)last_opt_ptr + 2, 0, new_hdr_len - (aligned_opt_offset +
+              opt_len) - 2);
+    }
+
+    /* Fix packet. */
+    hdr_ptr->len = (new_hdr_len >> 3) - 1;
+
+    uip_len += new_hdr_len - hdr_len;
+    uip_ext_len += new_hdr_len - hdr_len;
+
+    UIP_IP_BUF->len[0] = (uip_len - UIP_IPH_LEN) >> 8;
+    UIP_IP_BUF->len[1] = (uip_len - UIP_IPH_LEN) & 0xff;
+  }
+  else
+  {
+    /* add extension header, fix packet and return pointer. */
+    hdr_ptr = add_ext_hdr(hdr_type, opt_len + 2);
+    if(!hdr_ptr)
+    {
+      PRINTF("ERROR: could not insert header of type %d\n", hdr_type);
+      return NULL;
+    }
+    /*
+     * A signle option is always 4n + 2 aligned, as a header is always 8n
+     * aligned and has a 2 byte header.
+     */
+    opt_ptr = (void*)hdr_ptr + 2;
+    opt_ptr->type = opt_type;
+    opt_ptr->len = opt_len - 2;
+    memset((void*)opt_ptr + 2, 0, opt_len - 2);
+
+    /* Fix padding. */
+    last_opt_ptr = (void*)hdr_ptr + opt_len + 2;
+    int last_opt_offset = opt_len + 2;
+
+    switch(((hdr_ptr->len + 1) << 3) - last_opt_offset)
+    {
+      case 0:
+        break;
+      case 1:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PAD1;
+        break;
+      default:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PADN;
+        last_opt_ptr->len = ((hdr_ptr->len + 1) << 3) - last_opt_offset - 2;
+        memset((void*)last_opt_ptr + 2, 0, ((hdr_ptr->len + 1) << 3) -
+            last_opt_offset - 2);
+    }
+  }
+
+  return opt_ptr;
+}
 /*---------------------------------------------------------------------------*/
 /**
  * \brief Find the extension header of a specific type.
