@@ -1764,9 +1764,6 @@ uip_process(uint8_t flag)
         goto send;
       }
 
-#if UIP_CONF_IPV6_RPL
-      rpl_update_header_empty();
-#endif /* UIP_CONF_IPV6_RPL */
 
       UIP_IP_BUF->ttl = UIP_IP_BUF->ttl - 1;
       PRINTF("Forwarding packet to ");

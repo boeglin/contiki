@@ -236,10 +236,8 @@ int rpl_repair_root(uint8_t instance_id);
 int rpl_set_default_route(rpl_instance_t *instance, uip_ipaddr_t *from);
 rpl_dag_t *rpl_get_any_dag(void);
 rpl_instance_t *rpl_get_instance(uint8_t instance_id);
-void rpl_update_header_empty(void);
-int rpl_update_header_final(uip_ipaddr_t *addr);
+int rpl_update_header(uip_ipaddr_t *addr);
 int rpl_verify_header(int);
-void rpl_remove_header(void);
 uint8_t rpl_invert_header(void);
 /*---------------------------------------------------------------------------*/
 #endif /* RPL_H */

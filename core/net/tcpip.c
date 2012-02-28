@@ -584,7 +584,7 @@ tcpip_ipv6_output(void)
     }
     /* End of next hop determination */
 #if UIP_CONF_IPV6_RPL
-    if(rpl_update_header_final(nexthop)) {
+    if(rpl_update_header(nexthop)) {
       uip_len = 0;
       return;
     }
