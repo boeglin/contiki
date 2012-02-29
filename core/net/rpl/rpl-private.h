@@ -92,13 +92,9 @@
 /*---------------------------------------------------------------------------*/
 /* RPL IPv6 extension header option. */
 #define RPL_HDR_OPT_LEN			4
-#define RPL_HOP_BY_HOP_LEN		(RPL_HDR_OPT_LEN + 2 + 2)
 #define RPL_HDR_OPT_DOWN		0x80
-#define RPL_HDR_OPT_DOWN_SHIFT  	7
 #define RPL_HDR_OPT_RANK_ERR		0x40
-#define RPL_HDR_OPT_RANK_ERR_SHIFT   	6
 #define RPL_HDR_OPT_FWD_ERR		0x20
-#define RPL_HDR_OPT_FWD_ERR_SHIFT   	5
 /*---------------------------------------------------------------------------*/
 /* Default values for RPL constants and variables. */
 

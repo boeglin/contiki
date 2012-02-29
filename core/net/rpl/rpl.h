@@ -238,6 +238,5 @@ rpl_dag_t *rpl_get_any_dag(void);
 rpl_instance_t *rpl_get_instance(uint8_t instance_id);
 int rpl_update_header(uip_ipaddr_t *addr);
 int rpl_verify_header(int);
-uint8_t rpl_invert_header(void);
 /*---------------------------------------------------------------------------*/
 #endif /* RPL_H */

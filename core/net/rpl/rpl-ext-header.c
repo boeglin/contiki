@@ -55,7 +55,6 @@
 
 /************************************************************************/
 #define UIP_IP_BUF                ((struct uip_ip_hdr *)&uip_buf[UIP_LLH_LEN])
-#define UIP_EXT_HDR_OPT_BUF       ((struct uip_ext_hdr_opt *)&uip_buf[uip_l2_l3_hdr_len + uip_ext_opt_offset])
 #define UIP_EXT_HDR_OPT_RPL_BUF   ((struct uip_ext_hdr_opt_rpl *)&uip_buf[uip_l2_l3_hdr_len + uip_ext_opt_offset])
 /************************************************************************/
 int
@@ -128,13 +127,18 @@ rpl_update_header(uip_ipaddr_t *addr)
     return 1;
   }
 
+  /*
+   * This option should only be added to Data-Plane Datagrams: UDP, TCP, and
+   * maybe ICMPv6 Echo Request & Reply.
+   */
+
   rpl_opt_ptr = (struct uip_ext_hdr_opt_rpl*)find_ext_hdr_opt(UIP_PROTO_HBHO,
       UIP_EXT_HDR_OPT_RPL, NULL, NULL, NULL);
   if(!rpl_opt_ptr)
   {
     /* Create and update instance ID. */
     rpl_opt_ptr = (struct uip_ext_hdr_opt_rpl*)add_ext_hdr_opt(UIP_PROTO_HBHO,
-        UIP_EXT_HDR_OPT_RPL, 6, 2);
+        UIP_EXT_HDR_OPT_RPL, RPL_HDR_OPT_LEN + 2, 2);
     if(!rpl_opt_ptr)
     {
       PRINTF("RPL: Unable to add RPL Option\n");
@@ -151,40 +155,5 @@ rpl_update_header(uip_ipaddr_t *addr)
     rpl_opt_ptr->flags = RPL_HDR_OPT_DOWN;
 
   return 0;
-}
-/************************************************************************/
-uint8_t
-rpl_invert_header(void)
-{
-  uint8_t uip_ext_opt_offset;
-  uint8_t last_uip_ext_len;
-
-  last_uip_ext_len = uip_ext_len;
-  uip_ext_len = 0;
-  uip_ext_opt_offset = 2;
-
-  PRINTF("RPL: Verifying the presence of the RPL header option\n");
-  switch(UIP_IP_BUF->proto) {
-  case UIP_PROTO_HBHO:
-    break;
-  default:
-    PRINTF("RPL: No hop-by-hop Option found\n");
-    uip_ext_len = last_uip_ext_len;
-    return 0;
-  }
-
-  switch (UIP_EXT_HDR_OPT_BUF->type) {
-  case UIP_EXT_HDR_OPT_RPL:
-    PRINTF("RPL: Updating RPL option (switching direction)\n");
-    UIP_EXT_HDR_OPT_RPL_BUF->flags &= RPL_HDR_OPT_DOWN;
-    UIP_EXT_HDR_OPT_RPL_BUF->flags ^= RPL_HDR_OPT_DOWN;
-    UIP_EXT_HDR_OPT_RPL_BUF->senderrank = rpl_get_instance(UIP_EXT_HDR_OPT_RPL_BUF->instance)->current_dag->rank;
-    uip_ext_len = last_uip_ext_len;
-    return RPL_HOP_BY_HOP_LEN;
-  default:
-    PRINTF("RPL: Multi Hop-by-hop options not implemented\n");
-    uip_ext_len = last_uip_ext_len;
-    return 0;
-  }
 }
 /************************************************************************/
