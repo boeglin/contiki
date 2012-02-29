@@ -1945,8 +1945,11 @@ uip_process(uint8_t flag)
   goto send;
   /* End of headers processing */
   
-  icmp6_input:
   /* This is IPv6 ICMPv6 processing code. */
+  icmp6_input:
+
+  remove_all_ext_hdr();
+
   PRINTF("icmp6_input: length %d type: %d \n", uip_len, UIP_ICMP_BUF->type);
 
 #if UIP_CONF_IPV6_CHECKS
