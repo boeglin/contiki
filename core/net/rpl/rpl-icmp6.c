@@ -184,6 +184,7 @@ dis_output(uip_ipaddr_t *addr)
   /*     |     Flags     |   Reserved    |   Option(s)...  */
   /*     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ */
 
+  uip_ext_len = 0;
   buffer = UIP_ICMP_PAYLOAD;
   buffer[0] = buffer[1] = 0;
 
@@ -422,6 +423,7 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
   /* DAG Information Object */
   pos = 0;
 
+  uip_ext_len = 0;
   buffer = UIP_ICMP_PAYLOAD;
   buffer[pos++] = instance->instance_id;
   buffer[pos++] = dag->version;
@@ -688,6 +690,11 @@ dao_input(void)
       PRINTF("RPL: Forwarding DAO to parent ");
       PRINT6ADDR(&dag->preferred_parent->addr);
       PRINTF("\n");
+      /*
+       * This is a new packet, from this node to its parent, not a forward.
+       * So, we cleanup the extension headers here.
+       */
+      remove_all_ext_hdr();
       uip_icmp6_send(&dag->preferred_parent->addr,
                      ICMP6_RPL, RPL_CODE_DAO, buffer_length);
     }
@@ -721,6 +728,7 @@ dao_output(rpl_parent_t *n, uint8_t lifetime)
   RPL_DEBUG_DAO_OUTPUT(n);
 #endif
 
+  uip_ext_len = 0;
   buffer = UIP_ICMP_PAYLOAD;
 
   RPL_LOLLIPOP_INCREMENT(dao_sequence);
@@ -799,6 +807,7 @@ dao_ack_output(rpl_instance_t *instance, uip_ipaddr_t *dest, uint8_t sequence)
   PRINT6ADDR(dest);
   PRINTF("\n");
 
+  uip_ext_len = 0;
   buffer = UIP_ICMP_PAYLOAD;
 
   buffer[0] = instance->instance_id;
