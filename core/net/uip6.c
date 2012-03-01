@@ -570,16 +570,22 @@ remove_ext_hdr(uint8_t hdr_type)
  * \brief Remove the extension header option of a specific type.
  * \param hdr_type The type of extension header in which to look.
  * \param opt_type The type of extension header option to remove.
+ * \param[out] ext_hdr_removed_flag A flag that will be set to one if the
+ * complete header has been removed, and zero otherwise.  If NULL is passed,
+ * the function will not use this parameter for output.
  * \return The number of bytes removed.
  */
 int
-remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type)
+remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
+    ext_hdr_removed_flag)
 {
   struct uip_ext_hdr_opt* opt_ptr;
   struct uip_ext_hdr* hdr_ptr;
   struct uip_ext_hdr_opt* prev_opt_ptr;
   struct uip_ext_hdr_opt* next_opt_ptr;
   struct uip_ext_hdr_opt* last_opt_ptr;
+
+  int removed_len;
 
   opt_ptr = find_ext_hdr_opt(hdr_type, opt_type, &hdr_ptr, &prev_opt_ptr,
       &next_opt_ptr);
@@ -588,8 +594,13 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type)
     /* Not found. */
     return 0;
   if(!prev_opt_ptr && !next_opt_ptr)
+  {
     /* Was the only non-PAD option in the header. */
-    return remove_ext_hdr(hdr_type);
+    removed_len = remove_ext_hdr(hdr_type);
+    if(ext_hdr_removed_flag)
+      *ext_hdr_removed_flag = removed_len ? 1 : 0;
+    return removed_len;
+  }
 
   /*
    * First, remove the option and pack the header.
@@ -696,7 +707,7 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type)
     }
   }
 
-  int removed_len = ((hdr_ptr->len + 1) << 3) - aligned_hdr_len;
+  removed_len = ((hdr_ptr->len + 1) << 3) - aligned_hdr_len;
   if(removed_len)
   {
     void* next_hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);

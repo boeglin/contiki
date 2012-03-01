@@ -1880,7 +1880,8 @@ struct uip_udp_hdr {
  */
 int remove_all_ext_hdr(void);
 int remove_ext_hdr(uint8_t hdr_type);
-int remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type);
+int remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
+    ext_hdr_removed_flag);
 
 struct uip_ext_hdr* add_ext_hdr(uint8_t hdr_type, int hdr_len);
 struct uip_ext_hdr_opt* add_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
