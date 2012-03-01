@@ -586,6 +586,8 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
   struct uip_ext_hdr_opt* last_opt_ptr;
 
   int removed_len;
+  if(ext_hdr_removed_flag)
+    *ext_hdr_removed_flag = 0;
 
   opt_ptr = find_ext_hdr_opt(hdr_type, opt_type, &hdr_ptr, &prev_opt_ptr,
       &next_opt_ptr);
@@ -597,8 +599,8 @@ remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
   {
     /* Was the only non-PAD option in the header. */
     removed_len = remove_ext_hdr(hdr_type);
-    if(ext_hdr_removed_flag)
-      *ext_hdr_removed_flag = removed_len ? 1 : 0;
+    if(ext_hdr_removed_flag && removed_len)
+      *ext_hdr_removed_flag = 1;
     return removed_len;
   }
 
