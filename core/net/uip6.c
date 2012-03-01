@@ -500,29 +500,394 @@ uip_connect(uip_ipaddr_t *ripaddr, uint16_t rport)
 }
 #endif /* UIP_TCP && UIP_ACTIVE_OPEN */
 /*---------------------------------------------------------------------------*/
-void
-remove_ext_hdr(void)
+/**
+ * \brief Remove all extension headers.
+ * \return The number of bytes removed.
+ */
+int
+remove_all_ext_hdr(void)
 {
-  /* Remove ext header before TCP/UDP processing. */
-  if(uip_ext_len > 0) {
-    PRINTF("Cutting ext-header before processing (extlen: %d, uiplen: %d)\n",
-	   uip_ext_len, uip_len);
-    if(uip_len < UIP_IPH_LEN + uip_ext_len) {
-      PRINTF("ERROR: uip_len too short compared to ext len\n");
+  uint8_t header_type[4] = {UIP_PROTO_HBHO, UIP_PROTO_DESTO,
+    UIP_PROTO_ROUTING, UIP_PROTO_FRAG};
+  int i;
+  int removed = 0;
+
+  for(i = 0; i < sizeof(header_type); ++i)
+    removed += remove_ext_hdr(header_type[i]);
+
+  return removed;
+}
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Remove the extension header of a specific type.
+ * \param hdr_type The type of extension header to remove.
+ * \return The number of bytes removed.
+ */
+int
+remove_ext_hdr(uint8_t hdr_type)
+{
+  struct uip_ext_hdr* prev_hdr_ptr;
+  struct uip_ext_hdr* hdr_ptr = find_ext_hdr(hdr_type, &prev_hdr_ptr);
+  struct uip_ext_hdr* next_hdr_ptr;
+  int hdr_len;
+  uint8_t next_hdr_type;
+
+  if(!hdr_ptr)
+    /* Not found. */
+    return 0;
+
+  hdr_len = (hdr_ptr->len + 1) << 3;
+  next_hdr_ptr = (void*)hdr_ptr + hdr_len;
+  next_hdr_type = hdr_ptr->next;
+
+  memmove(hdr_ptr, next_hdr_ptr, uip_len - ((void*)next_hdr_ptr -
+        (void*)UIP_IP_BUF));
+
+  if(prev_hdr_ptr)
+    prev_hdr_ptr->next = next_hdr_type;
+  else
+    UIP_IP_BUF->proto = next_hdr_type;
+
+  if(uip_ext_len < hdr_len || uip_len - UIP_IPH_LEN < hdr_len)
+  {
+    PRINTF("ERROR: uip_len too short compared to hdr_len\n");
+    uip_ext_len = 0;
+    uip_len = 0;
+    return 0;
+  }
+
+  uip_len -= hdr_len;
+  uip_ext_len -= hdr_len;
+
+  UIP_IP_BUF->len[0] = (uip_len - UIP_IPH_LEN) >> 8;
+  UIP_IP_BUF->len[1] = (uip_len - UIP_IPH_LEN) & 0xff;
+
+  return hdr_len;
+}
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Remove the extension header option of a specific type.
+ * \param hdr_type The type of extension header in which to look.
+ * \param opt_type The type of extension header option to remove.
+ * \return The number of bytes removed.
+ */
+int
+remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type)
+{
+  struct uip_ext_hdr_opt* opt_ptr;
+  struct uip_ext_hdr* hdr_ptr;
+  struct uip_ext_hdr_opt* prev_opt_ptr;
+  struct uip_ext_hdr_opt* next_opt_ptr;
+  struct uip_ext_hdr_opt* last_opt_ptr;
+
+  opt_ptr = find_ext_hdr_opt(hdr_type, opt_type, &hdr_ptr, &prev_opt_ptr,
+      &next_opt_ptr);
+
+  if(!opt_ptr)
+    /* Not found. */
+    return 0;
+  if(!prev_opt_ptr && !next_opt_ptr)
+    /* Was the only non-PAD option in the header. */
+    return remove_ext_hdr(hdr_type);
+
+  /*
+   * First, remove the option and pack the header.
+   *
+   * What we do here is that we will move forward the options after (and
+   * including) next_opt_ptr, while maintaining the same 4-byte alignment.
+   *
+   * If we knew the alignment requirement of each option, we could save a few
+   * more padding bytes by aligning them more precisely, and maybe re-ordering
+   * them. But it's "a bit" more complex.
+   */
+
+  /* Advance at the position where it is safe to write. */
+  if(!prev_opt_ptr)
+    prev_opt_ptr = (void*)hdr_ptr + 2;
+  else
+    prev_opt_ptr = (void*)prev_opt_ptr + prev_opt_ptr->len + 2;
+
+  if(!next_opt_ptr)
+  {
+    /* There is only padding after the option, no need to move anything. */
+    last_opt_ptr = prev_opt_ptr;
+  }
+  else
+  {
+    /*
+     * There are other options afterwards, we need to find where they end,
+     * pack them, and fix internal padding.
+     */
+
+    /* Find where options actually end. */
+    struct uip_ext_hdr_opt* tmp_ptr = next_opt_ptr;
+    int hdr_len = (hdr_ptr-> len + 1) << 3;
+    int opt_offset = (void*)next_opt_ptr - (void*)hdr_ptr;
+
+    last_opt_ptr = next_opt_ptr;
+    while(opt_offset < hdr_len)
+    {
+      switch(tmp_ptr->type)
+      {
+        case UIP_EXT_HDR_OPT_PAD1:
+          ++opt_offset;
+          tmp_ptr = (void*)tmp_ptr + 1;
+          break;
+        default:
+          last_opt_ptr = tmp_ptr;
+        case UIP_EXT_HDR_OPT_PADN:
+          opt_offset += tmp_ptr->len + 2;
+          tmp_ptr = (void*)tmp_ptr + tmp_ptr->len + 2;
+      }
+    }
+    /* And advance at the position until which we have to keep data. */
+    last_opt_ptr = (void*)last_opt_ptr + last_opt_ptr->len + 2;
+
+    /*
+     * Pack header. Data between prev_opt_ptr and next_opt_ptr can be removed,
+     * but alignment must be preserved.
+     */
+    int aligned_move = ((void*)next_opt_ptr - (void*)prev_opt_ptr) & ~3;
+    if(aligned_move)
+    {
+      void* aligned_to_ptr = (void*)next_opt_ptr - aligned_move;
+
+      memmove(aligned_to_ptr, next_opt_ptr, (void*)last_opt_ptr - (void*)next_opt_ptr);
+
+      /* Fix internal padding. */
+      int pad_len = aligned_to_ptr - (void*)prev_opt_ptr;
+      switch(pad_len)
+      {
+        case 0:
+          break;
+        case 1:
+          prev_opt_ptr->type = UIP_EXT_HDR_OPT_PAD1;
+          break;
+        default:
+          prev_opt_ptr->type = UIP_EXT_HDR_OPT_PADN;
+          prev_opt_ptr->len = pad_len - 2;
+          memset((void*)prev_opt_ptr + 2, 0, pad_len - 2);
+      }
+
+      /* Fix pointer. */
+      last_opt_ptr = (void*)last_opt_ptr - aligned_move;
+    }
+  }
+
+  /* Second, fix padding at the end of the header and update header size. */
+  int hdr_len = (void*)last_opt_ptr - (void*)hdr_ptr;
+  /* Align to the nearest multiple of 8. */
+  int aligned_hdr_len = (hdr_len + 7) & ~7;
+  /* Add padding. */
+  if(aligned_hdr_len > hdr_len)
+  {
+    switch(aligned_hdr_len - hdr_len)
+    {
+      case 0:
+        break;
+      case 1:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PAD1;
+        break;
+      default:
+        last_opt_ptr->type = UIP_EXT_HDR_OPT_PADN;
+        last_opt_ptr->len = aligned_hdr_len - hdr_len - 2;
+        memset((void*)last_opt_ptr + 2, 0, aligned_hdr_len - hdr_len - 2);
+    }
+  }
+
+  int removed_len = ((hdr_ptr->len + 1) << 3) - aligned_hdr_len;
+  if(removed_len)
+  {
+    void* next_hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
+    /* Fix header size. */
+    hdr_ptr->len = (aligned_hdr_len - 1) >> 3;
+
+    /* Finally, pack the rest of the packet and fix IP size. */
+    void* new_next_hdr_ptr = next_hdr_ptr - removed_len;
+
+    memmove(new_next_hdr_ptr, next_hdr_ptr, uip_len - (next_hdr_ptr -
+          (void*)UIP_IP_BUF));
+
+    if(uip_ext_len < removed_len || uip_len - UIP_IPH_LEN < removed_len)
+    {
+      PRINTF("ERROR: uip_len too short compared to removed_len\n");
       uip_ext_len = 0;
       uip_len = 0;
-      return;
+      return 0;
     }
-    memmove(((uint8_t *)UIP_TCP_BUF), (uint8_t *)UIP_TCP_BUF + uip_ext_len,
-	    uip_len - UIP_IPH_LEN - uip_ext_len);
 
-    uip_len -= uip_ext_len;
+    uip_len -= removed_len;
+    uip_ext_len -= removed_len;
 
-    /* Update the IP length. */
     UIP_IP_BUF->len[0] = (uip_len - UIP_IPH_LEN) >> 8;
     UIP_IP_BUF->len[1] = (uip_len - UIP_IPH_LEN) & 0xff;
-    uip_ext_len = 0;
   }
+
+  return removed_len;
+}
+/*---------------------------------------------------------------------------*/
+
+struct uip_ext_hdr*
+add_ext_hdr(uint8_t hdr_type, int hdr_len)
+{
+  return NULL; //XXX
+}
+
+struct uip_ext_hdr_opt*
+add_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int opt_len, int
+    opt_alignment)
+{
+  return NULL; //XXX
+}
+
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Find the extension header of a specific type.
+ * \param hdr_type The type of extension header to find.
+ * \param[out] prev_hdr_ptr A pointer that will be set to the previous
+ * extension header, or NULL if the extension header is right after the IP
+ * header. If NULL is passed, the function will not use this parameter for
+ * output.
+ * \return A pointer to the extension header, or NULL if an extension header
+ * of the requested type was not found, in which case the output parameters
+ * have no meaning and must be ignored.
+ */
+struct uip_ext_hdr*
+find_ext_hdr(uint8_t hdr_type, struct uip_ext_hdr** prev_hdr_ptr)
+{
+  uint8_t header_type[4] = {UIP_PROTO_HBHO, UIP_PROTO_DESTO,
+    UIP_PROTO_ROUTING, UIP_PROTO_FRAG};
+  int i;
+  struct uip_ext_hdr* hdr_ptr = (void*)UIP_IP_BUF + UIP_IPH_LEN;
+
+  if(prev_hdr_ptr)
+    *prev_hdr_ptr = NULL;
+  if(UIP_IP_BUF->proto == hdr_type)
+    /* First header is of the requested type, return it. */
+    return hdr_ptr;
+
+  /* Did not match, check if it is still a known extension header. */
+  for(i = 0; i < sizeof(header_type); ++i)
+    if(UIP_IP_BUF->proto == header_type[i])
+      break;
+  if(i == sizeof(header_type))
+    /* Unknown header type, exit. */
+    return NULL;
+
+  while(hdr_ptr->next != hdr_type)
+  {
+    /* Did not match, check if it is still a known extension header. */
+    for(i = 0; i < sizeof(header_type); ++i)
+      if(hdr_ptr->next == header_type[i])
+        break;
+    if(i == sizeof(header_type))
+      /* Unknown header type, exit. */
+      return NULL;
+
+    /* Then, advance the pointer. */
+    hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
+  }
+
+  /* We exited the while loop, it means we found it. */
+  if(prev_hdr_ptr)
+    *prev_hdr_ptr = hdr_ptr;
+  return (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
+}
+/*---------------------------------------------------------------------------*/
+/**
+ * \brief Find the extension header option of a specific type.
+ * \param hdr_type The type of extension header in which to look.
+ * \param opt_type The type of extension header option to find.
+ * \param[out] hdr_ptr A pointer that will be set to the extension header. If
+ * NULL is passed, the function will not use this parameter for output.
+ * \param[out] prev_opt_ptr A pointer that will be set to the previous non-PAD
+ * extension header option, or NULL if the option is the first one. If NULL is
+ * passed, the function will not use this parameter for output.
+ * \param[out] next_opt_ptr A pointer that will be set to the next non-PAD
+ * extension header option, or NULL if the option is the last one. If NULL is
+ * passed, the function will not use this parameter for output.
+ * \return A pointer to the extension header option, or NULL if an extension
+ * header option of the requested type was not found, in which case the output
+ * parameters have no meaning and must be ignored.
+ */
+struct uip_ext_hdr_opt*
+find_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, struct uip_ext_hdr**
+    hdr_ptr, struct uip_ext_hdr_opt** prev_opt_ptr, struct uip_ext_hdr_opt**
+    next_opt_ptr)
+{
+  struct uip_ext_hdr* my_hdr_ptr = find_ext_hdr(hdr_type, NULL);
+  int hdr_len;
+  struct uip_ext_hdr_opt* opt_ptr;
+  int opt_offset = 2;
+
+  if(!my_hdr_ptr)
+    return NULL;
+
+  if(hdr_ptr)
+    *hdr_ptr = my_hdr_ptr;
+
+  hdr_len = (my_hdr_ptr-> len + 1) << 3;
+  opt_ptr = (void*)my_hdr_ptr + 2;
+  if(prev_opt_ptr)
+    *prev_opt_ptr = NULL;
+  /* Loop until we find the option. */
+  while(opt_ptr->type != opt_type && opt_offset < hdr_len)
+  {
+    switch(opt_ptr->type)
+    {
+      case UIP_EXT_HDR_OPT_PAD1:
+        ++opt_offset;
+        opt_ptr = (void*)opt_ptr + 1;
+        break;
+      default:
+        if(prev_opt_ptr)
+          *prev_opt_ptr = opt_ptr;
+      case UIP_EXT_HDR_OPT_PADN:
+        opt_offset += opt_ptr->len + 2;
+        opt_ptr = (void*)opt_ptr + opt_ptr->len + 2;
+    }
+  }
+  if(opt_offset >= hdr_len)
+    /* Not found. */
+    return NULL;
+
+  if(next_opt_ptr)
+  {
+    /* next_opt_ptr was provided, we have to update it. */
+    struct uip_ext_hdr_opt* tmp_ptr;
+    if(opt_ptr->type == UIP_EXT_HDR_OPT_PAD1)
+    {
+      ++opt_offset;
+      tmp_ptr = (void*)opt_ptr + 1;
+    }
+    else
+    {
+      opt_offset += opt_ptr->len + 2;
+      tmp_ptr = (void*)opt_ptr + opt_ptr->len + 2;
+    }
+    *next_opt_ptr = NULL;
+    /* Loop until we find the next non-PAD option. */
+    while(opt_offset < hdr_len)
+    {
+      if(tmp_ptr->type == UIP_EXT_HDR_OPT_PAD1)
+      {
+        ++opt_offset;
+        tmp_ptr = (void*)tmp_ptr + 1;
+      }
+      else if(tmp_ptr->type == UIP_EXT_HDR_OPT_PADN)
+      {
+        opt_offset += tmp_ptr->len + 2;
+        tmp_ptr = (void*)tmp_ptr + tmp_ptr->len + 2;
+      }
+      else
+      {
+        *next_opt_ptr = tmp_ptr;
+        break;
+      }
+    }
+  }
+
+  return opt_ptr;
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
@@ -858,7 +1223,7 @@ ext_hdr_options_process(void)
           return 1;
         }
         uip_ext_opt_offset += (UIP_EXT_HDR_OPT_RPL_BUF->opt_len) + 2;
-        return 0;
+        break;
 #endif /* UIP_CONF_IPV6_RPL */
       default:
         /*
@@ -1435,7 +1800,7 @@ uip_process(uint8_t flag)
   /* UDP input processing. */
  udp_input:
 
-  remove_ext_hdr();
+  remove_all_ext_hdr();
 
   PRINTF("Receiving UDP packet\n");
   UIP_STAT(++uip_stat.udp.recv);
@@ -1545,7 +1910,7 @@ uip_process(uint8_t flag)
   /* TCP input processing. */
  tcp_input:
 
-  remove_ext_hdr();
+  remove_all_ext_hdr();
 
   UIP_STAT(++uip_stat.tcp.recv);
   PRINTF("Receiving TCP packet\n");
