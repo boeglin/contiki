@@ -82,7 +82,7 @@ uip_icmp6_echo_request_input(void)
   /* IP header */
   UIP_IP_BUF->ttl = uip_ds6_if.cur_hop_limit;
 
-  if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)){
+  if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)) {
     uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
     uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &UIP_IP_BUF->destipaddr);
   } else {
@@ -92,7 +92,7 @@ uip_icmp6_echo_request_input(void)
   }
 
   if(uip_ext_len > 0) {
-    /* If there were extension headers*/
+    /* If there were extension headers */
     UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
     uip_len -= uip_ext_len;
     UIP_IP_BUF->len[0] = ((uip_len - UIP_IPH_LEN) >> 8);
@@ -126,11 +126,12 @@ uip_icmp6_echo_request_input(void)
 }
 /*---------------------------------------------------------------------------*/
 void
-uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param) {
+uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param)
+{
   uip_ext_len = 0;
 
- /* check if originating packet is not an ICMP error*/
-  if(UIP_IP_BUF->proto == UIP_PROTO_ICMP6 && UIP_ICMP_BUF->type < 128){
+  /* check if originating packet is not an ICMP error */
+  if(UIP_IP_BUF->proto == UIP_PROTO_ICMP6 && UIP_ICMP_BUF->type < 128) {
     uip_len = 0;
     return;
   }
@@ -144,7 +145,8 @@ uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param) {
     uip_len = UIP_LINK_MTU;
 
   memmove((uint8_t *)UIP_ICMP6_ERROR_BUF + UIP_ICMP6_ERROR_LEN,
-          (void *)UIP_IP_BUF, uip_len - UIP_IPICMPH_LEN - UIP_ICMP6_ERROR_LEN);
+          (void *)UIP_IP_BUF,
+          uip_len - UIP_IPICMPH_LEN - UIP_ICMP6_ERROR_LEN);
 
   UIP_IP_BUF->vtc = 0x60;
   UIP_IP_BUF->tcflow = 0;
@@ -154,15 +156,15 @@ uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param) {
 
   /* the source should not be unspecified nor multicast, the check for
      multicast is done in uip_process */
-  if(uip_is_addr_unspecified(&UIP_IP_BUF->srcipaddr)){
+  if(uip_is_addr_unspecified(&UIP_IP_BUF->srcipaddr)) {
     uip_len = 0;
     return;
   }
 
   uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
 
-  if(uip_is_addr_mcast(&tmp_ipaddr)){
-    if(type == ICMP6_PARAM_PROB && code == ICMP6_PARAMPROB_OPTION){
+  if(uip_is_addr_mcast(&tmp_ipaddr)) {
+    if(type == ICMP6_PARAM_PROB && code == ICMP6_PARAMPROB_OPTION) {
       uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &tmp_ipaddr);
     } else {
       uip_len = 0;

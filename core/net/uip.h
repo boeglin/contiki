@@ -1874,26 +1874,100 @@ struct uip_udp_hdr {
 #define UIP_EXT_HDR_BITMAP_DESTO2 0x40
 /** @} */
 
-/** @{ */
 /**
- * \brief Functions for extension header processing
+ * \defgroup uipexthdrfunc Functions for extension header processing
+ * @{
+ *
+ * These functions can be used to manipulate Extension Headers and their
+ * Options.
+ */
+
+/**
+ * \brief Remove all extension headers.
+ * \return The number of bytes removed.
  */
 int remove_all_ext_hdr(void);
+
+/**
+ * \brief Remove the extension header of a specific type.
+ * \param hdr_type The type of extension header to remove.
+ * \return The number of bytes removed.
+ */
 int remove_ext_hdr(uint8_t hdr_type);
-int remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type, int*
-    ext_hdr_removed_flag);
 
-struct uip_ext_hdr* add_ext_hdr(uint8_t hdr_type, int hdr_len);
-struct uip_ext_hdr_opt* add_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
-    int opt_len, int opt_alignment);
+/**
+ * \brief Remove the extension header option of a specific type.
+ * \param hdr_type The type of extension header in which to look.
+ * \param opt_type The type of extension header option to remove.
+ * \param[out] ext_hdr_removed_flag A flag that will be set to one if the
+ * complete header has been removed, and zero otherwise.  If NULL is passed,
+ * the function will not use this parameter for output.
+ * \return The number of bytes removed.
+ */
+int remove_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
+                       int *ext_hdr_removed_flag);
 
-struct uip_ext_hdr* find_ext_hdr(uint8_t hdr_type, struct uip_ext_hdr**
-    prev_hdr_ptr);
-struct uip_ext_hdr_opt* find_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
-    struct uip_ext_hdr** hdr_ptr, struct uip_ext_hdr_opt** prev_opt_ptr,
-    struct uip_ext_hdr_opt** next_opt_ptr);
+/**
+ * \brief Add an extension header of a specific type.
+ * \param hdr_type The type of extension header to add.
+ * \param hdr_len The size of the extension header to add, including its
+ * header.
+ * \return A pointer to the extension header, or NULL in case of error (header
+ * already present, or requested size too big for UIP_BUF).
+ */
+struct uip_ext_hdr *add_ext_hdr(uint8_t hdr_type, int hdr_len);
+
+/**
+ * \brief Add an extension header option of a specific type.
+ * \param hdr_type The type of extension header to add.
+ * \param opt_type The type of extension header option to add.
+ * \param opt_len The size of the extension header option to add, including
+ * its header.
+ * \param opt_alignment The alignment of the extension header to add. Can be
+ * 1, 2, or 4.
+ * \return A pointer to the extension header option, or NULL in case of error
+ * (requested size too big for UIP_BUF).
+ */
+struct uip_ext_hdr_opt *add_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
+                                        int opt_len, int opt_alignment);
+
+/**
+ * \brief Find the extension header of a specific type.
+ * \param hdr_type The type of extension header to find.
+ * \param[out] prev_hdr_ptr A pointer that will be set to the previous
+ * extension header, or NULL if the extension header is right after the IP
+ * header. If NULL is passed, the function will not use this parameter for
+ * output.
+ * \return A pointer to the extension header, or NULL if an extension header
+ * of the requested type was not found, in which case the output parameters
+ * have no meaning and must be ignored.
+ */
+struct uip_ext_hdr *find_ext_hdr(uint8_t hdr_type,
+                                 struct uip_ext_hdr **prev_hdr_ptr);
+
+/**
+ * \brief Find the extension header option of a specific type.
+ * \param hdr_type The type of extension header in which to look.
+ * \param opt_type The type of extension header option to find.
+ * \param[out] hdr_ptr A pointer that will be set to the extension header. If
+ * NULL is passed, the function will not use this parameter for output.
+ * \param[out] prev_opt_ptr A pointer that will be set to the previous non-PAD
+ * extension header option, or NULL if the option is the first one. If NULL is
+ * passed, the function will not use this parameter for output.
+ * \param[out] next_opt_ptr A pointer that will be set to the next non-PAD
+ * extension header option, or NULL if the option is the last one. If NULL is
+ * passed, the function will not use this parameter for output.
+ * \return A pointer to the extension header option, or NULL if an extension
+ * header option of the requested type was not found, in which case the output
+ * parameters have no meaning and must be ignored.
+ */
+struct uip_ext_hdr_opt *find_ext_hdr_opt(uint8_t hdr_type, uint8_t opt_type,
+                                         struct uip_ext_hdr **hdr_ptr,
+                                         struct uip_ext_hdr_opt
+                                         **prev_opt_ptr, struct uip_ext_hdr_opt
+                                         **next_opt_ptr);
+
 /** @} */
-
 
 #endif /* UIP_CONF_IPV6 */
 

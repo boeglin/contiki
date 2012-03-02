@@ -116,14 +116,13 @@ rpl_verify_header(int uip_ext_opt_offset)
 }
 /************************************************************************/
 int
-rpl_update_header(uip_ipaddr_t *addr)
+rpl_update_header(uip_ipaddr_t * addr)
 {
-  struct uip_ext_hdr_opt_rpl* rpl_opt_ptr;
-  struct rpl_parent* parent;
+  struct uip_ext_hdr_opt_rpl *rpl_opt_ptr;
+  struct rpl_parent *parent;
 
   if(default_instance == NULL || !default_instance->used ||
-      !default_instance->current_dag->joined)
-  {
+     !default_instance->current_dag->joined) {
     PRINTF("RPL: Unable to update RPL Option: incorrect default instance\n");
     return 1;
   }
@@ -132,27 +131,30 @@ rpl_update_header(uip_ipaddr_t *addr)
    * This option should only be added to Data-Plane Datagrams: UDP, TCP, and
    * maybe ICMPv6 Echo Request & Reply.
    */
-  struct uip_ext_hdr* hdr_ptr = (void*)UIP_IP_BUF + UIP_IPH_LEN;
-  uint8_t* hdr_type_ptr = &UIP_IP_BUF->proto;
-  while(*hdr_type_ptr != UIP_PROTO_TCP && *hdr_type_ptr != UIP_PROTO_UDP &&
-      *hdr_type_ptr != UIP_PROTO_ICMP6)
-  {
-    hdr_type_ptr = &hdr_ptr->next;
-    hdr_ptr = (void*)hdr_ptr + ((hdr_ptr->len + 1) << 3);
-  }
-  if(*hdr_type_ptr == UIP_PROTO_ICMP6 && *(uint8_t*)hdr_ptr !=
-      ICMP6_ECHO_REQUEST && *(uint8_t*)hdr_ptr != ICMP6_ECHO_REPLY)
-      return 0;
+  struct uip_ext_hdr *hdr_ptr = (void *)UIP_IP_BUF + UIP_IPH_LEN;
+  uint8_t *hdr_type_ptr = &UIP_IP_BUF->proto;
 
-  rpl_opt_ptr = (struct uip_ext_hdr_opt_rpl*)find_ext_hdr_opt(UIP_PROTO_HBHO,
-      UIP_EXT_HDR_OPT_RPL, NULL, NULL, NULL);
-  if(!rpl_opt_ptr)
-  {
+  while(*hdr_type_ptr != UIP_PROTO_TCP && *hdr_type_ptr != UIP_PROTO_UDP &&
+        *hdr_type_ptr != UIP_PROTO_ICMP6) {
+    hdr_type_ptr = &hdr_ptr->next;
+    hdr_ptr = (void *)hdr_ptr + ((hdr_ptr->len + 1) << 3);
+  }
+  if(*hdr_type_ptr == UIP_PROTO_ICMP6 && *(uint8_t *) hdr_ptr !=
+     ICMP6_ECHO_REQUEST && *(uint8_t *) hdr_ptr != ICMP6_ECHO_REPLY) {
+    return 0;
+  }
+
+  rpl_opt_ptr = (struct uip_ext_hdr_opt_rpl *)find_ext_hdr_opt(UIP_PROTO_HBHO,
+                                                               UIP_EXT_HDR_OPT_RPL,
+                                                               NULL, NULL,
+                                                               NULL);
+  if(!rpl_opt_ptr) {
     /* Create and update instance ID. */
-    rpl_opt_ptr = (struct uip_ext_hdr_opt_rpl*)add_ext_hdr_opt(UIP_PROTO_HBHO,
-        UIP_EXT_HDR_OPT_RPL, RPL_HDR_OPT_LEN + 2, 2);
-    if(!rpl_opt_ptr)
-    {
+    rpl_opt_ptr =
+      (struct uip_ext_hdr_opt_rpl *)add_ext_hdr_opt(UIP_PROTO_HBHO,
+                                                    UIP_EXT_HDR_OPT_RPL,
+                                                    RPL_HDR_OPT_LEN + 2, 2);
+    if(!rpl_opt_ptr) {
       PRINTF("RPL: Unable to add RPL Option\n");
       return 1;
     }
@@ -163,8 +165,9 @@ rpl_update_header(uip_ipaddr_t *addr)
   rpl_opt_ptr->senderrank = default_instance->current_dag->rank;
 
   parent = rpl_find_parent(default_instance->current_dag, addr);
-  if(parent == NULL || parent != parent->dag->preferred_parent)
+  if(parent == NULL || parent != parent->dag->preferred_parent) {
     rpl_opt_ptr->flags = RPL_HDR_OPT_DOWN;
+  }
 
   return 0;
 }
