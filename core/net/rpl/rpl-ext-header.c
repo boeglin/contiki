@@ -130,12 +130,14 @@ rpl_update_header(uip_ipaddr_t * addr)
   /*
    * This option should only be added to Data-Plane Datagrams: UDP, TCP, and
    * maybe ICMPv6 Echo Request & Reply.
+   * In case of a Control-Plane Datagram (ICMPv6 which is not a Echo Request
+   * or Reply), return immediately.
    */
   struct uip_ext_hdr *hdr_ptr = (void *)UIP_IP_BUF + UIP_IPH_LEN;
   uint8_t *hdr_type_ptr = &UIP_IP_BUF->proto;
 
   while(*hdr_type_ptr != UIP_PROTO_TCP && *hdr_type_ptr != UIP_PROTO_UDP &&
-        *hdr_type_ptr != UIP_PROTO_ICMP6) {
+        *hdr_type_ptr != UIP_PROTO_ICMP6 && *hdr_type_ptr != UIP_PROTO_NONE) {
     hdr_type_ptr = &hdr_ptr->next;
     hdr_ptr = (void *)hdr_ptr + ((hdr_ptr->len + 1) << 3);
   }
